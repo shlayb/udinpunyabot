@@ -5,13 +5,16 @@ import asyncio
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 import io
+import os
 from telegram import Update
 from telegram.ext import (
     ApplicationBuilder, CommandHandler, ContextTypes
 )
 
-TOKEN = "7888566326:AAF2rpd_i5bv655JcjRCp18TjEECDwivM48"
-CHAT_ID = 1343733029
+#TOKEN = "7888566326:AAF2rpd_i5bv655JcjRCp18TjEECDwivM48"
+#CHAT_ID = 1343733029
+TOKEN = os.getenv("TOKEN")
+CHAT_ID = int(os.getenv("CHAT_ID"))
 
 last_sent_prices = {}
 user_targets = {}
