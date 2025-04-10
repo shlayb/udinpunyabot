@@ -1,24 +1,81 @@
-import time
 import yfinance as yf
-import nest_asyncio
-import asyncio
 import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+from datetime import datetime, timedelta
+from sklearn.preprocessing import MinMaxScaler
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import GRU, Dense
+from tensorflow.keras.callbacks import EarlyStopping
+import tensorflow as tf
 import matplotlib.dates as mdates
 import io
-#import os
+import os
 from telegram import Update
-from telegram.ext import (
-    ApplicationBuilder, CommandHandler, ContextTypes
-)
+from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
+from dotenv import load_dotenv
+
+load_dotenv()
 TOKEN = "7888566326:AAF2rpd_i5bv655JcjRCp18TjEECDwivM48"
 CHAT_ID = 1343733029
-#TOKEN = os.getenv("TOKEN")
-#CHAT_ID = int(os.getenv("CHAT_ID"))
+
+# Global variables for GRU
+model_gru = None
+price_scaler = None
+X_scaled_global = None
+window_size = 30
 
 last_sent_prices = {}
 user_targets = {}
 user_portfolios = {}
 
+# === FUNGSI TRAIN GRU SEKALI ===
+def train_gru_model(symbol="ADRO"):
+    global model_gru, price_scaler, X_scaled_global
+
+    ticker = f"{symbol}.JK"
+    end_date = datetime.today()
+    start_date = end_date - timedelta(days=1825)
+
+    data = yf.download(ticker, start=start_date.strftime('%Y-%m-%d'), end=end_date.strftime('%Y-%m-%d'))
+
+    if data.empty:
+        raise Exception("❗ Data saham tidak tersedia.")
+
+    data['Returns'] = data['Close'].pct_change()
+    data['MA_20'] = data['Close'].rolling(window=20).mean()
+    data = data.dropna()
+
+    features = ['Close', 'Open', 'High', 'Low', 'Volume', 'Returns', 'MA_20']
+    X_data = data[features].values
+    y_data = data['Close'].values
+
+    scaler_X = MinMaxScaler()
+    X_scaled = scaler_X.fit_transform(X_data)
+    price_scaler = MinMaxScaler()
+    y_scaled = price_scaler.fit_transform(y_data.reshape(-1, 1)).reshape(-1)
+
+    X_scaled_global = X_scaled
+
+    X_seq, y_seq = [], []
+    for i in range(len(X_scaled) - window_size):
+        X_seq.append(X_scaled[i:i+window_size])
+        y_seq.append(y_scaled[i+window_size])
+    X_seq, y_seq = np.array(X_seq), np.array(y_seq)
+
+    split = int(0.85 * len(X_seq))
+    X_train, X_test = X_seq[:split], X_seq[split:]
+    y_train, y_test = y_seq[:split], y_seq[split:]
+
+    model = Sequential([
+        GRU(50, input_shape=(window_size, X_scaled.shape[1])),
+        Dense(1)
+    ])
+    model.compile(optimizer='rmsprop', loss='mse')
+    early_stop = EarlyStopping(monitor='val_loss', patience=10, restore_best_weights=True)
+    model.fit(X_train, y_train, epochs=400, batch_size=16, validation_data=(X_test, y_test), callbacks=[early_stop], verbose=0)
+
+    model_gru = model
 
 def get_price_info(symbol):
     ticker = yf.Ticker(f"{symbol}.JK")
@@ -30,7 +87,6 @@ def get_price_info(symbol):
     open_price = data.iloc[0]["Open"]
     percent_change = ((latest - open_price) / open_price) * 100
     return latest, open_price, percent_change
-
 
 def generate_stock_chart(symbol):
     ticker = yf.Ticker(f"{symbol}.JK")
@@ -60,6 +116,34 @@ def generate_stock_chart(symbol):
     plt.close(fig)
     return buf
 
+async def prediksi_besok(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    global model_gru, price_scaler, X_scaled_global, window_size
+
+    if len(context.args) != 1:
+        await update.message.reply_text("Gunakan: /tmrw <saham>")
+        return
+
+    symbol = context.args[0].upper()
+
+    if not symbol.isalnum():
+        await update.message.reply_text("Nama saham tidak valid. Gunakan huruf dan angka saja.")
+        return
+
+    try:
+        train_gru_model(symbol)
+    except Exception as e:
+        await update.message.reply_text(str(e))
+        return
+
+    if model_gru is None or price_scaler is None or X_scaled_global is None:
+        await update.message.reply_text("Model belum siap. Coba lagi nanti.")
+        return
+
+    last_seq = X_scaled_global[-window_size:]
+    pred_scaled = model_gru.predict(last_seq.reshape(1, window_size, X_scaled_global.shape[1]), verbose=0)
+    pred_price = price_scaler.inverse_transform(pred_scaled)[0][0]
+
+    await update.message.reply_text(f"\U0001F4C8 Prediksi harga {symbol}.JK untuk besok: Rp {pred_price:,.2f}")
 
 async def send_price_update(context: ContextTypes.DEFAULT_TYPE):
     symbols = ["ADRO", "ENRG"]
@@ -207,13 +291,18 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         " - /setporto <saham> <lot>\n"
         " - /porto\n"
         " - /cek\n"
-        " - /graf <saham>"
+        " - /graf <saham>\n"
+        " - /tmrw <saham>"
     )
 
 
 async def main():
+    print("Melatih model GRU untuk prediksi harga...")
+    train_gru_model("ADRO")
+
     app = ApplicationBuilder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("tmrw", prediksi_besok))
     app.add_handler(CommandHandler("settarget", set_target))
     app.add_handler(CommandHandler("setporto", set_porto))
     app.add_handler(CommandHandler("porto", show_porto))
@@ -227,6 +316,12 @@ async def main():
     await app.run_polling()
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
+    import asyncio
+    import nest_asyncio
+    
+    # Apply nest_asyncio to allow nested use of asyncio.run and loop.run_until_complete
     nest_asyncio.apply()
-    asyncio.get_event_loop().run_until_complete(main())
+    
+    # Now we can safely run our async code
+    asyncio.run(main())
