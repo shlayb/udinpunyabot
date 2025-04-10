@@ -1,4 +1,9 @@
-python-telegram-bot==20.3
 yfinance
 matplotlib
-nest_asyncio
+numpy
+pandas
+scikit-learn
+tensorflow
+python-telegram-bot>=20.0
+python-dotenv
+nest-asyncio
