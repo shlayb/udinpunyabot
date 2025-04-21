@@ -243,7 +243,7 @@ async def show_porto(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def cek(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    symbols = ["ADRO", "ENRG", "ACES"]
+    symbols = ["ADRO", "ENRG", "MBMA"]
     message = ""
 
     for symbol in symbols:
