@@ -204,7 +204,7 @@ async def set_porto(update: Update, context: ContextTypes.DEFAULT_TYPE):
             raise ValueError("Gunakan: /setporto <saham> <jumlah lot>")
 
         symbol = context.args[0].upper()
-        if symbol not in ["ADRO", "ENRG"]:
+        if symbol not in ["ADRO", "ENRG", "MBMA"]:
             await update.message.reply_text("❗ Saham tidak dikenal. Gunakan: ADRO atau ENRG.")
             return
 
