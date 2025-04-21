@@ -146,7 +146,7 @@ async def prediksi_besok(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"\U0001F4C8 Prediksi harga {symbol}.JK untuk besok: Rp {pred_price:,.2f}")
 
 async def send_price_update(context: ContextTypes.DEFAULT_TYPE):
-    symbols = ["ADRO", "ENRG"]
+    symbols = ["ADRO", "ENRG", "MBMA"]
 
     for symbol in symbols:
         price, open_price, percent = get_price_info(symbol)
